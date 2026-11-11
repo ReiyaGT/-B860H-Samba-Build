@@ -1,0 +1,92 @@
+
+name: Build Samba ARMv7 Android 6
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout Samba source
+        uses: actions/checkout@v4
+        with:
+          repository: GTA-Electronics/Android-samba
+          ref: samba-4.5.16
+          path: samba-src
+
+      - name: Build Samba for Android ARMv7
+        shell: bash
+        run: |
+          docker run --rm \
+            --platform linux/amd64 \
+            -v "$GITHUB_WORKSPACE:/work" \
+            -w /work/samba-src \
+            ubuntu:18.04 \
+            bash -exo pipefail -c '
+              export DEBIAN_FRONTEND=noninteractive
+
+              apt-get update
+              apt-get install -y \
+                build-essential \
+                gcc \
+                g++ \
+                make \
+                git \
+                wget \
+                unzip \
+                zip \
+                file \
+                python2.7 \
+                python2.7-dev \
+                perl \
+                pkg-config
+
+              ln -sf /usr/bin/python2.7 /usr/local/bin/python
+
+              cd /tmp
+              wget -q \
+                https://dl.google.com/android/repository/android-ndk-r17c-linux-x86_64.zip
+
+              unzip -q android-ndk-r17c-linux-x86_64.zip -d /opt
+
+              export NDK_PATH_r17c=/opt/android-ndk-r17c
+
+              cd /work/samba-src
+
+              chmod +x configure.sh compile.sh cc_shim.py
+
+              ./configure.sh --arch=arm --api=23
+
+              ./compile.sh --build-server
+
+              test -x out/samba/bin/smbd
+              test -x out/samba/bin/nmbd
+              test -x out/samba/bin/smbpasswd
+
+              file out/samba/bin/smbd
+              file out/samba/bin/nmbd
+
+              cd out
+
+              zip -qr /work/samba-armv7-android23.zip samba
+
+              cd /work
+
+              sha256sum samba-armv7-android23.zip \
+                > samba-armv7-android23.sha256
+            '
+
+      - name: Upload Samba package
+        uses: actions/upload-artifact@v4
+        with:
+          name: samba-armv7-android23
+          path: |
+            samba-armv7-android23.zip
+            samba-armv7-android23.sha256
+          if-no-files-found: error
+          retention-days: 14
